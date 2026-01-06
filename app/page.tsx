@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/src/lib/supabase';
+import { useState, useEffect, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
 // Supabase 테이블 구조에 맞는 타입
@@ -34,9 +34,12 @@ const statusLabels = {
   cancelled: '취소',
 };
 
+type SortOption = 'roi_desc' | 'created_desc';
+
 export default function Dashboard() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortOption, setSortOption] = useState<SortOption>('created_desc');
 
   useEffect(() => {
     fetchProperties();
@@ -46,8 +49,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('properties')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
 
       if (error) {
         throw error;
@@ -61,6 +63,38 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
+
+  // 정렬된 물건 목록
+  const sortedProperties = useMemo(() => {
+    const sorted = [...properties];
+    
+    sorted.forEach((prop) => {
+      const totalInvestment =
+        (prop.purchase_price || 0) + (prop.total_remodeling_cost || 0);
+      const expectedSalePrice = prop.expected_sale_price || 0;
+      const roi =
+        totalInvestment > 0
+          ? ((expectedSalePrice - totalInvestment) / totalInvestment) * 100
+          : 0;
+      (prop as any).calculatedRoi = roi;
+    });
+
+    if (sortOption === 'roi_desc') {
+      sorted.sort((a, b) => {
+        const roiA = (a as any).calculatedRoi || 0;
+        const roiB = (b as any).calculatedRoi || 0;
+        return roiB - roiA;
+      });
+    } else if (sortOption === 'created_desc') {
+      sorted.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+    }
+
+    return sorted;
+  }, [properties, sortOption]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
@@ -219,10 +253,27 @@ export default function Dashboard() {
 
       {/* 물건 목록 테이블 */}
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h2 className="text-lg font-semibold text-gray-900">
             관리 중인 물건 목록
           </h2>
+          <div className="flex items-center space-x-2">
+            <label
+              htmlFor="sort-select"
+              className="text-sm font-medium text-gray-700"
+            >
+              정렬:
+            </label>
+            <select
+              id="sort-select"
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value as SortOption)}
+              className="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="roi_desc">수익률 높은 순</option>
+              <option value="created_desc">최신 등록 순</option>
+            </select>
+          </div>
         </div>
         {loading ? (
           <div className="px-6 py-12 text-center text-gray-500">
@@ -306,15 +357,22 @@ export default function Dashboard() {
                     </td>
                   </tr>
                 ) : (
-                  properties.map((property) => {
+                  sortedProperties.map((property) => {
                     const totalInvestment =
                       (property.purchase_price || 0) + (property.total_remodeling_cost || 0);
-                    const expectedProfit =
-                      (property.expected_sale_price || 0) - totalInvestment;
-                    const profitRate =
+                    const expectedSalePrice = property.expected_sale_price || 0;
+                    // ROI 계산: (매각 예상가 - 총 투자금) / 총 투자금 * 100
+                    const roi =
                       totalInvestment > 0
-                        ? (expectedProfit / totalInvestment) * 100
+                        ? ((expectedSalePrice - totalInvestment) / totalInvestment) * 100
                         : 0;
+                    
+                    // 색상 결정: 15% 이상 초록색, 5% 미만 빨간색, 그 외 기본
+                    const getRoiColor = () => {
+                      if (roi >= 15) return 'text-green-600 font-bold';
+                      if (roi < 5) return 'text-red-600 font-bold';
+                      return roi >= 0 ? 'text-green-600' : 'text-red-600';
+                    };
 
                     return (
                       <tr
@@ -362,13 +420,9 @@ export default function Dashboard() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div
-                            className={`text-sm font-semibold ${
-                              profitRate >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}
-                          >
-                            {profitRate >= 0 ? '+' : ''}
-                            {profitRate.toFixed(2)}%
+                          <div className={`text-sm font-semibold ${getRoiColor()}`}>
+                            {roi >= 0 ? '+' : ''}
+                            {roi.toFixed(2)}%
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

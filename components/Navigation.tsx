@@ -7,6 +7,7 @@ const navItems = [
   { href: '/', label: '대시보드' },
   { href: '/auctions', label: '경매 관리' },
   { href: '/remodeling', label: '리모델링 비용' },
+  { href: '/statistics', label: '통계' },
 ];
 
 export default function Navigation() {
